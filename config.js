@@ -45,7 +45,9 @@ export default {
    * Depois use Configurações → Descobrir ferramentas MCP e fixe a escolhida
    * em UTMIFY_MCP_TOOL.
    */
-  UTMIFY_MCP_URL: '',
+
+  
+  UTMIFY_MCP_URL: 'https://mcp.utmify.com.br/mcp/?token=gtmZtnqqlHjbxWCx988EHnMjuZFyCy8o&resources=gs,gg,gtf,gpc,gcs',
   UTMIFY_MCP_TOOL: '',
   UTMIFY_MCP_ARGS: '',
 
