@@ -22,7 +22,7 @@ export default {
    * só funciona rodando na sua máquina, nunca na Vercel.
    */
   SUPABASE_URL: 'https://kwtmwjaavgoywwxhtzba.supabase.co',
-  SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_n3VbRBwa2zdiJMfki54uVw_NdLXeeRN',
+  SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3dG13amFhdmdveXd3eGh0emJhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjQ5MzA0OSwiZXhwIjoyMTAyMDY5MDQ5fQ.eP2FKD5YDt42k8V8KN3Ji8f8HI6qEgOGl-XvtDNh-Cw',
 
   /* --- SEGREDOS (obrigatórios em produção) -------------------------------
    * Gere cada um com:
