@@ -63,19 +63,28 @@ próximo deploy — e **é por isso que o login não funciona num deploy sem ban
 já que o sistema não consegue nem criar os três sócios. A tela de login avisa
 isso explicitamente, e `GET /api/health` mostra o diagnóstico completo.
 
-**Neon (recomendado):**
+**Supabase (recomendado) — sem nenhuma dependência de npm:**
 
-1. Em [console.neon.tech](https://console.neon.tech), crie um projeto (região `sa-east-1`, São Paulo).
-2. Copie a **connection string** (a "pooled" serve).
-3. Na Vercel → Settings → Environment Variables, cole em `DATABASE_URL`.
-4. **Faça um novo deploy** — variável nova só vale para build novo.
+1. Crie um projeto em [supabase.com](https://supabase.com) (região São Paulo).
+2. Abra o **SQL Editor**, cole o conteúdo de `supabase-setup.sql` e clique em Run.
+   Isso cria a tabela e já grava os 3 sócios com senha inicial.
+3. Em **Settings → API**, copie o **Project URL** e a chave **service_role**.
+4. Na Vercel → Settings → Environment Variables:
+   `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
+5. **Faça um novo deploy** — variável nova só vale para build novo.
 
-A tabela `central_db` é criada sozinha no primeiro acesso: uma linha, uma coluna
-`JSONB`. Nada de migration. Se você usa a integração oficial Neon↔Vercel, ela já
-define `DATABASE_URL` sozinha e não há nada a fazer.
+O driver do Supabase fala a API REST com `fetch` puro. Isso importa: não existe
+pacote para faltar em produção, que é a causa mais comum de
+`FUNCTION_INVOCATION_FAILED` num deploy serverless.
 
-Alternativas: Upstash Redis / Vercel KV (`KV_REST_API_URL` + `KV_REST_API_TOKEN`)
-ou Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
+> A chave **service_role** ignora RLS de propósito e por isso só existe no
+> servidor (pasta `api/`) — ela nunca é enviada ao navegador. O script liga RLS
+> na tabela e não cria nenhuma política, então a chave `anon` (a que aparece no
+> front de qualquer app Supabase) não consegue ler nem escrever nada.
+
+**Alternativas:** Neon/Postgres via `DATABASE_URL` (exige
+`npm i @neondatabase/serverless`), Upstash Redis / Vercel KV
+(`KV_REST_API_URL` + `KV_REST_API_TOKEN`) ou Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
 
 ### 2.2 Variáveis de ambiente
 
@@ -84,8 +93,9 @@ ou Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
 | `SESSION_SECRET` | assina o cookie de sessão — **obrigatória** |
 | `VAULT_SECRET` | chave de criptografia do cofre — **obrigatória** |
 | `SEED_PASSWORD` | senha inicial (só na primeira execução) |
-| `DATABASE_URL` | banco em produção (Neon/Postgres) — **obrigatória** |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | alternativa ao Postgres |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | banco em produção — **obrigatórias** |
+| `DATABASE_URL` | alternativa: Neon/Postgres |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | alternativa: Upstash |
 | `CRON_SECRET` | protege o cron diário |
 | `INGEST_TOKEN` | permite push externo de faturamento |
 | `UTMIFY_MCP_URL` | servidor MCP da UTMify (seção 5) |
@@ -99,6 +109,15 @@ Abra `https://SEU-APP.vercel.app/api/health`. Ele responde em texto claro o que
 está faltando — banco, `SESSION_SECRET`, `VAULT_SECRET` — sem expor nenhum valor
 de segredo. A própria tela de login mostra o mesmo aviso quando algo está errado,
 em vez de dizer "senha incorreta".
+
+Essa rota é deliberadamente paranoica: **ela não importa nada no topo do
+arquivo**. Se o módulo do banco quebrar ao carregar, todas as outras rotas viram
+`FUNCTION_INVOCATION_FAILED` (a página de erro da Vercel, sem explicação) e esta
+aqui continua respondendo e diz o motivo.
+
+O campo `build` na resposta diz qual versão está no ar. Se ele não bater com a
+que você acabou de subir, o deploy não pegou o código novo — e o diagnóstico
+já está feito.
 
 Os acessos criados automaticamente na primeira execução são
 `artur@`, `carlos@` e `elisson@operacao.com`, com a senha de `SEED_PASSWORD`

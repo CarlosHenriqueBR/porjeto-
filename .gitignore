@@ -1,0 +1,8 @@
+node_modules
+.vercel
+.env
+.env.local
+data/db.json
+public/build
+*.log
+.DS_Store
