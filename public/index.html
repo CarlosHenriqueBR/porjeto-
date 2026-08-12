@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d0d0d" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Central Operation — painel interno da operação" />
+<title>Central Operation</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%233987e5'/%3E%3Ctext x='16' y='22' font-family='system-ui' font-size='15' font-weight='700' fill='%23fff' text-anchor='middle'%3ECO%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/build/app.css" />
+<style>
+  html, body { background: #0d0d0d; margin: 0; }
+  #root:empty::after {
+    content: ''; display: block; width: 26px; height: 26px; margin: 40vh auto 0;
+    border-radius: 50%; border: 2px solid #383835; border-top-color: #3987e5;
+    animation: boot .7s linear infinite;
+  }
+  @keyframes boot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/build/app.js"></script>
+</body>
+</html>
