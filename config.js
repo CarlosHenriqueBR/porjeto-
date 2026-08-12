@@ -31,8 +31,8 @@ export default {
    * ATENÇÃO: trocar VAULT_SECRET depois de guardar senhas no cofre torna
    * essas senhas ilegíveis para sempre. Defina antes de usar o cofre.
    */
-  SESSION_SECRET: '',
-  VAULT_SECRET: '',
+  SESSION_SECRET: 'sb_publishable_jdwu0hmhsZcXuME-mmToFw_pWrIRMAK',
+  VAULT_SECRET: 'sb_secret_c1cb_ajRcWFq-9djub7zww_1bRKlMkx',
 
   /* --- SENHA INICIAL -----------------------------------------------------
    * Só é usada na primeiríssima execução, quando o banco é criado do zero.
