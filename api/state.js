@@ -1,5 +1,5 @@
 import { readDb, DRIVER } from './_lib/store.js';
-import { json, requireUser } from './_lib/http.js';
+import { json, requireUser, withErrors } from './_lib/http.js';
 import { can, buildDre } from './_lib/model.js';
 
 const TZ = 'America/Sao_Paulo';
@@ -7,7 +7,7 @@ const day = (o = 0) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
     .format(new Date(Date.now() + o * 86400000));
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
 
@@ -80,3 +80,5 @@ export default async function handler(req, res) {
 const profitOf = (m) => (m.revenue || 0) - (m.adSpend || 0) - (m.otherCost || 0);
 const countBy = (list) =>
   list.reduce((acc, x) => ((acc[x.status] = (acc[x.status] || 0) + 1), acc), {});
+
+export default withErrors(handler);

@@ -2,6 +2,28 @@ import { readDb } from './store.js';
 import { verifySession, signSession } from './crypto.js';
 
 export const COOKIE = 'sc_session';
+
+/**
+ * Envolve um handler para que erros de configuração (banco ausente, segredo
+ * faltando) cheguem à tela com nome próprio, em vez de virar um 500 mudo.
+ */
+export function withErrors(handler) {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (e) {
+      if (res.headersSent) return;
+      if (e && e.code === 'DB_CONFIG') {
+        return json(res, 503, {
+          error: 'banco_nao_configurado',
+          hint: 'Defina KV_REST_API_URL e KV_REST_API_TOKEN (Upstash/Vercel KV) nas variáveis de ambiente e faça um novo deploy.',
+        });
+      }
+      console.error('[api]', req.url, e);
+      return json(res, 500, { error: 'erro_interno' });
+    }
+  };
+}
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 dias
 
 export function json(res, status, body) {

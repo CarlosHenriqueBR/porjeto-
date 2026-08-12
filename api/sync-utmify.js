@@ -14,7 +14,7 @@
 // O cron da Vercel chama esta rota diariamente (ver vercel.json).
 // ---------------------------------------------------------------------------
 import { updateDb, logActivity, notify } from './_lib/store.js';
-import { json, readBody, getUser } from './_lib/http.js';
+import { json, readBody, getUser, withErrors } from './_lib/http.js';
 import { createMcpClient, unwrapToolResult, findNumber, dig } from './_lib/mcp.js';
 
 const TZ = 'America/Sao_Paulo';
@@ -47,7 +47,7 @@ async function authorize(req) {
   return (await getUser(req)) || null;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const actor = await authorize(req);
   if (!actor) return json(res, 401, { error: 'nao_autorizado' });
 
@@ -216,3 +216,5 @@ export default async function handler(req, res) {
 }
 
 const fmt = (n) => `R$ ${(n || 0).toFixed(2)}`;
+
+export default withErrors(handler);

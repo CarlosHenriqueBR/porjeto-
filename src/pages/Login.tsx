@@ -1,6 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useApp } from '@/store/AppContext';
+
+interface Health {
+  ok: boolean;
+  problems?: string[];
+  hint?: string;
+}
 
 export function Login() {
   const { pull } = useApp();
@@ -8,6 +14,16 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<Health | null>(null);
+
+  // Se o deploy estiver mal configurado, dizemos isso na cara em vez de
+  // devolver "senha incorreta" — o erro mais chato de depurar que existe.
+  useEffect(() => {
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((j: Health) => { if (!j.ok) setHealth(j); })
+      .catch(() => {});
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -18,9 +34,15 @@ export function Login() {
       await pull(true);
       location.hash = '#/dashboard';
     } catch (ex) {
-      if (ex instanceof ApiError && ex.payload.error === 'muitas_tentativas') {
-        const mins = Math.ceil(Number(ex.payload.retryIn || 60) / 60);
+      const code = ex instanceof ApiError ? String(ex.payload.error ?? ex.message) : '';
+      if (code === 'banco_nao_configurado') {
+        setErr('O banco de dados ainda não foi configurado neste deploy.');
+        setHealth({ ok: false, problems: [String((ex as ApiError).payload.hint ?? '')] });
+      } else if (code === 'muitas_tentativas') {
+        const mins = Math.ceil(Number((ex as ApiError).payload.retryIn ?? 60) / 60);
         setErr(`Muitas tentativas. Tente de novo em ${mins} min.`);
+      } else if (code === 'erro_interno') {
+        setErr('O servidor falhou ao responder. Veja /api/health para o diagnóstico.');
       } else {
         setErr('E-mail ou senha incorretos.');
       }
@@ -35,6 +57,24 @@ export function Login() {
         <div className="brand-mark">CO</div>
         <h1 className="auth-title">Central Operation</h1>
         <p className="auth-sub">Acesso restrito à equipe.</p>
+
+        {health && !health.ok && (
+          <div className="alert-banner crit" style={{ marginTop: 18, marginBottom: 0, alignItems: 'flex-start' }}>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <b>Este deploy ainda não está pronto</b>
+              {(health.problems ?? []).filter(Boolean).map((p) => (
+                <span key={p} style={{ fontWeight: 400, lineHeight: 1.45 }}>{p}</span>
+              ))}
+              {health.hint && (
+                <span style={{ fontWeight: 400, lineHeight: 1.45, opacity: 0.85 }}>{health.hint}</span>
+              )}
+              <a href="/api/health" target="_blank" rel="noopener noreferrer"
+                 style={{ textDecoration: 'underline', fontWeight: 400 }}>
+                ver diagnóstico completo
+              </a>
+            </div>
+          </div>
+        )}
 
         <label className="field">
           <span>E-mail</span>

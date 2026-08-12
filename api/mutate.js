@@ -1,5 +1,5 @@
 import { updateDb, cid, logActivity, notify } from './_lib/store.js';
-import { json, readBody, requireUser } from './_lib/http.js';
+import { json, readBody, requireUser, withErrors } from './_lib/http.js';
 import { encryptSecret, hashPassword, verifyPassword } from './_lib/crypto.js';
 import {
   DOMAIN_STATUS, ACCOUNT_STATUS, STRUCTURE_STATUS, TASK_COLUMNS, TASK_PRIORITY,
@@ -34,7 +34,7 @@ const ACTION_PILLAR = {
 
 /* -------------------------------- handler -------------------------------- */
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'metodo_invalido' });
   const user = await requireUser(req, res);
   if (!user) return;
@@ -526,3 +526,5 @@ const brl = (n) => (n || 0).toLocaleString('pt-BR', { style: 'currency', currenc
 const fmtDate = (d) => { const [y, m, dd] = String(d).split('-'); return `${dd}/${m}/${y}`; };
 
 export { CATEGORIES };
+
+export default withErrors(handler);

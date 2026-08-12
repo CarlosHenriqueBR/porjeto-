@@ -1,10 +1,10 @@
 import { readDb } from './_lib/store.js';
 import { verifyPassword } from './_lib/crypto.js';
-import { json, readBody, setSessionCookie, clientIp, rateLimit, clearRateLimit } from './_lib/http.js';
+import { json, readBody, setSessionCookie, clientIp, rateLimit, clearRateLimit, withErrors } from './_lib/http.js';
 
 const WINDOW = 10 * 60_000;
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'metodo_invalido' });
 
   const { email, password } = await readBody(req);
@@ -48,3 +48,5 @@ export default async function handler(req, res) {
     },
   });
 }
+
+export default withErrors(handler);

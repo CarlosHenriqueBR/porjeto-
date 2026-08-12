@@ -59,15 +59,23 @@ Ou conecte o repositório pelo painel. O `vercel.json` já diz tudo: build com
 ### 2.1 Banco de dados (obrigatório em produção)
 
 O disco da Vercel é somente-leitura e efêmero: um `db.json` gravado lá some no
-próximo deploy. O formato continua sendo um único JSON — só muda onde ele mora.
+próximo deploy — e **é por isso que o login não funciona num deploy sem banco**,
+já que o sistema não consegue nem criar os três sócios. A tela de login avisa
+isso explicitamente, e `GET /api/health` mostra o diagnóstico completo.
 
-**Upstash Redis (grátis, ~2 minutos):**
+**Neon (recomendado):**
 
-1. [console.upstash.com](https://console.upstash.com) → Create Database → região `sa-east-1` (São Paulo).
-2. Copie **UPSTASH_REDIS_REST_URL** e **UPSTASH_REDIS_REST_TOKEN**.
-3. Na Vercel → Settings → Environment Variables, cole como `KV_REST_API_URL` e `KV_REST_API_TOKEN`.
+1. Em [console.neon.tech](https://console.neon.tech), crie um projeto (região `sa-east-1`, São Paulo).
+2. Copie a **connection string** (a "pooled" serve).
+3. Na Vercel → Settings → Environment Variables, cole em `DATABASE_URL`.
+4. **Faça um novo deploy** — variável nova só vale para build novo.
 
-Alternativa: crie um Blob Store e defina `BLOB_READ_WRITE_TOKEN`.
+A tabela `central_db` é criada sozinha no primeiro acesso: uma linha, uma coluna
+`JSONB`. Nada de migration. Se você usa a integração oficial Neon↔Vercel, ela já
+define `DATABASE_URL` sozinha e não há nada a fazer.
+
+Alternativas: Upstash Redis / Vercel KV (`KV_REST_API_URL` + `KV_REST_API_TOKEN`)
+ou Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
 
 ### 2.2 Variáveis de ambiente
 
@@ -76,13 +84,25 @@ Alternativa: crie um Blob Store e defina `BLOB_READ_WRITE_TOKEN`.
 | `SESSION_SECRET` | assina o cookie de sessão — **obrigatória** |
 | `VAULT_SECRET` | chave de criptografia do cofre — **obrigatória** |
 | `SEED_PASSWORD` | senha inicial (só na primeira execução) |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | banco em produção |
+| `DATABASE_URL` | banco em produção (Neon/Postgres) — **obrigatória** |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | alternativa ao Postgres |
 | `CRON_SECRET` | protege o cron diário |
 | `INGEST_TOKEN` | permite push externo de faturamento |
 | `UTMIFY_MCP_URL` | servidor MCP da UTMify (seção 5) |
 
 > **Trocar `VAULT_SECRET` depois de já ter senhas salvas torna essas senhas
 > ilegíveis.** Defina antes de cadastrar o primeiro acesso no cofre.
+
+### 2.3 Deu erro no login?
+
+Abra `https://SEU-APP.vercel.app/api/health`. Ele responde em texto claro o que
+está faltando — banco, `SESSION_SECRET`, `VAULT_SECRET` — sem expor nenhum valor
+de segredo. A própria tela de login mostra o mesmo aviso quando algo está errado,
+em vez de dizer "senha incorreta".
+
+Os acessos criados automaticamente na primeira execução são
+`artur@`, `carlos@` e `elisson@operacao.com`, com a senha de `SEED_PASSWORD`
+(padrão `Operacao@2026`).
 
 ---
 

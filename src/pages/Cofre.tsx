@@ -36,7 +36,15 @@ export function Cofre() {
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        toast(
+          j.error === 'segredo_ilegivel'
+            ? 'Esta senha foi criptografada com outra VAULT_SECRET — cadastre-a de novo.'
+            : 'Não foi possível revelar',
+          'bad',
+        );
+        return;
+      }
       setRevealed((r) => ({ ...r, [id]: j.secret }));
       timers.current[id] = window.setTimeout(() => hide(id), REVEAL_MS);
     } catch {

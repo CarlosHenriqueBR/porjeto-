@@ -1,23 +1,101 @@
 // ---------------------------------------------------------------------------
-// Banco JSON com 3 drivers automáticos:
-//   1. KV REST  (Vercel KV / Upstash Redis)  -> produção  [recomendado]
-//   2. Vercel Blob                            -> produção  [alternativa]
-//   3. Arquivo local ./data/db.json           -> desenvolvimento
+// Banco JSON com 4 drivers, escolhidos automaticamente pelas variáveis de
+// ambiente presentes (nesta ordem de prioridade):
+//   1. Neon / Postgres (DATABASE_URL)         -> produção  [recomendado]
+//   2. KV REST (Vercel KV / Upstash Redis)    -> produção
+//   3. Vercel Blob                            -> produção
+//   4. Arquivo local ./data/db.json           -> desenvolvimento
 // ---------------------------------------------------------------------------
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { hashPassword } from './crypto.js';
 import { SECTORS, ALL_PERMS } from './model.js';
 
+const PG_URL =
+  process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL || '';
 const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || '';
 const DB_KEY = process.env.DB_KEY || 'central-db';
 const FILE_PATH = path.join(process.cwd(), 'data', 'db.json');
 
-export const DRIVER = KV_URL && KV_TOKEN ? 'kv' : BLOB_TOKEN ? 'blob' : 'file';
+export const DRIVER =
+  PG_URL ? 'neon'
+  : KV_URL && KV_TOKEN ? 'kv'
+  : BLOB_TOKEN ? 'blob'
+  : 'file';
+
+/**
+ * Na Vercel o disco é somente-leitura: o driver de arquivo não tem como criar
+ * nem gravar o banco. Em vez de estourar um 500 genérico (que na tela virava
+ * "e-mail ou senha incorretos"), falhamos com um erro nomeado que a tela de
+ * login sabe explicar.
+ */
+export const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+export const DB_CONFIGURED = DRIVER !== 'file' || !IS_SERVERLESS;
+export const HAS_PG = !!PG_URL;
+
+export function dbConfigError() {
+  const e = new Error('banco_nao_configurado');
+  e.code = 'DB_CONFIG';
+  return e;
+}
 
 /* ------------------------------- drivers -------------------------------- */
+
+/* ----- Neon / Postgres -----------------------------------------------------
+ * O banco inteiro vive num único registro JSONB. Mantém o modelo "um JSON"
+ * que o resto do sistema espera e ainda assim ganha durabilidade de verdade.
+ * Usa o driver oficial @neondatabase/serverless (HTTP, sem TCP) — funciona em
+ * qualquer Postgres que aceite conexão via a URL, incluindo Neon e Supabase.
+ * -------------------------------------------------------------------------- */
+let sqlClient = null;
+let tableReady = false;
+
+async function pgClient() {
+  if (sqlClient) return sqlClient;
+  let neon;
+  try {
+    ({ neon } = await import('@neondatabase/serverless'));
+  } catch {
+    const e = new Error(
+      'Pacote @neondatabase/serverless não encontrado. Rode "npm install" (ele já está no package.json).'
+    );
+    e.code = 'DB_CONFIG';
+    throw e;
+  }
+  sqlClient = neon(PG_URL);
+  return sqlClient;
+}
+
+async function pgEnsureTable() {
+  if (tableReady) return;
+  const sql = await pgClient();
+  await sql`CREATE TABLE IF NOT EXISTS central_db (
+    id TEXT PRIMARY KEY,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`;
+  tableReady = true;
+}
+
+async function pgRead() {
+  await pgEnsureTable();
+  const sql = await pgClient();
+  const rows = await sql`SELECT data FROM central_db WHERE id = ${DB_KEY}`;
+  const row = Array.isArray(rows) ? rows[0] : rows?.rows?.[0];
+  if (!row) return null;
+  return typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+}
+
+async function pgWrite(db) {
+  await pgEnsureTable();
+  const sql = await pgClient();
+  await sql`
+    INSERT INTO central_db (id, data, updated_at)
+    VALUES (${DB_KEY}, ${JSON.stringify(db)}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`;
+}
 
 async function kvRead() {
   const r = await fetch(`${KV_URL}/get/${encodeURIComponent(DB_KEY)}`, {
@@ -81,7 +159,8 @@ async function fileWrite(db) {
 }
 
 const driver =
-  DRIVER === 'kv' ? { read: kvRead, write: kvWrite }
+  DRIVER === 'neon' ? { read: pgRead, write: pgWrite }
+  : DRIVER === 'kv' ? { read: kvRead, write: kvWrite }
   : DRIVER === 'blob' ? { read: blobRead, write: blobWrite }
   : { read: fileRead, write: fileWrite };
 
@@ -135,6 +214,7 @@ let cache = { db: null, at: 0 };
 const READ_TTL = Number(process.env.READ_TTL_MS ?? 1200);
 
 export async function readDb({ fresh = false } = {}) {
+  if (!DB_CONFIGURED) throw dbConfigError();
   const now = Date.now();
   if (!fresh && cache.db && now - cache.at < READ_TTL) return cache.db;
   let db = await driver.read();
