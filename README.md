@@ -86,7 +86,38 @@ pacote para faltar em produção, que é a causa mais comum de
 `npm i @neondatabase/serverless`), Upstash Redis / Vercel KV
 (`KV_REST_API_URL` + `KV_REST_API_TOKEN`) ou Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
 
-### 2.2 Variáveis de ambiente
+### 2.2 Configurar por arquivo, sem mexer na Vercel
+
+Se preferir não usar o painel da Vercel, preencha o **`config.js` na raiz** e
+suba. É a forma mais direta:
+
+```js
+export default {
+  SUPABASE_URL: 'https://xxxxxxxx.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOi...',
+  SESSION_SECRET: '...',
+  VAULT_SECRET: '...',
+  SEED_PASSWORD: 'Operacao@2026',
+};
+```
+
+Como funciona:
+
+- O arquivo é lido **só pelo servidor** (`api/`). O build do front enxerga
+  apenas `src/`, e a Vercel serve apenas `public/` — o `config.js` fica na raiz,
+  fora dos dois. Ele nunca chega ao navegador.
+- **Variável de ambiente sempre vence o arquivo.** Assim dá para sobrescrever um
+  valor pontual na Vercel sem editar o código.
+- `/api/health` mostra, em `origem`, de onde veio cada valor (`config.js` ou
+  `ambiente`) — sem nunca exibir o valor em si.
+
+> **O repositório precisa ser privado.** O `config.js` guarda a chave do banco e
+> a chave do cofre. Ele está fora do `.gitignore` de propósito: se fosse
+> ignorado, não iria junto no deploy e a aplicação subiria sem banco. Se um dia
+> precisar abrir o repositório, mova os valores para as variáveis de ambiente da
+> Vercel e deixe o arquivo vazio — o sistema continua funcionando igual.
+
+### 2.3 Variáveis de ambiente
 
 | Variável | Para quê |
 | --- | --- |
@@ -103,7 +134,7 @@ pacote para faltar em produção, que é a causa mais comum de
 > **Trocar `VAULT_SECRET` depois de já ter senhas salvas torna essas senhas
 > ilegíveis.** Defina antes de cadastrar o primeiro acesso no cofre.
 
-### 2.3 Deu erro no login?
+### 2.4 Deu erro no login?
 
 Abra `https://SEU-APP.vercel.app/api/health`. Ele responde em texto claro o que
 está faltando — banco, `SESSION_SECRET`, `VAULT_SECRET` — sem expor nenhum valor

@@ -16,7 +16,7 @@ export function withErrors(handler) {
       if (e && e.code === 'DB_CONFIG') {
         return json(res, 503, {
           error: 'banco_nao_configurado',
-          hint: 'Defina KV_REST_API_URL e KV_REST_API_TOKEN (Upstash/Vercel KV) nas variáveis de ambiente e faça um novo deploy.',
+          hint: 'Defina DATABASE_URL (Neon/Postgres) nas variáveis de ambiente e faça um novo deploy. Abra /api/health para o diagnóstico completo.',
         });
       }
       console.error('[api]', req.url, e);

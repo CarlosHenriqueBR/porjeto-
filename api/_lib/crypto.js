@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
+import { cfg } from './config.js';
 
-const SESSION_SECRET =
-  process.env.SESSION_SECRET || 'dev-only-session-secret-troque-em-producao';
-const VAULT_SECRET =
-  process.env.VAULT_SECRET || 'dev-only-vault-secret-troque-em-producao';
+const SESSION_SECRET = cfg('SESSION_SECRET', 'dev-only-session-secret-troque-em-producao');
+const VAULT_SECRET = cfg('VAULT_SECRET', 'dev-only-vault-secret-troque-em-producao');
 
 /* ----------------------------- senhas (scrypt) --------------------------- */
 
@@ -54,12 +53,16 @@ export function verifySession(token) {
 
 /* --------------------------- cofre (AES-256-GCM) ------------------------- */
 
-const vaultKey = crypto.scryptSync(VAULT_SECRET, 'controle-vault-v1', 32);
+// Derivada sob demanda: fazer scrypt no topo do módulo custaria ~80ms em todo
+// cold start, inclusive nas rotas que nem tocam no cofre — e um erro aqui
+// derrubaria a função inteira antes de qualquer handler rodar.
+let _vaultKey = null;
+const vaultKey = () => (_vaultKey ??= crypto.scryptSync(VAULT_SECRET, 'controle-vault-v1', 32));
 
 export function encryptSecret(plain) {
   if (plain == null || plain === '') return '';
   const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', vaultKey, iv);
+  const c = crypto.createCipheriv('aes-256-gcm', vaultKey(), iv);
   const ct = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
   return `v1.${iv.toString('base64url')}.${c.getAuthTag().toString('base64url')}.${ct.toString('base64url')}`;
 }
@@ -69,7 +72,7 @@ export function decryptSecret(payload) {
   try {
     const [v, ivB, tagB, ctB] = String(payload).split('.');
     if (v !== 'v1') return '';
-    const d = crypto.createDecipheriv('aes-256-gcm', vaultKey, Buffer.from(ivB, 'base64url'));
+    const d = crypto.createDecipheriv('aes-256-gcm', vaultKey(), Buffer.from(ivB, 'base64url'));
     d.setAuthTag(Buffer.from(tagB, 'base64url'));
     return Buffer.concat([d.update(Buffer.from(ctB, 'base64url')), d.final()]).toString('utf8');
   } catch {

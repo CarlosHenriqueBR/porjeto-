@@ -10,7 +10,7 @@ import type { VaultItem } from '@/types';
 const REVEAL_MS = 45_000;
 
 export function Cofre() {
-  const { data, mutate, toast } = useApp();
+  const { data, mutate, toast, pull } = useApp();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [editing, setEditing] = useState<VaultItem | 'new' | null>(null);
@@ -47,6 +47,8 @@ export function Cofre() {
       }
       setRevealed((r) => ({ ...r, [id]: j.secret }));
       timers.current[id] = window.setTimeout(() => hide(id), REVEAL_MS);
+      // a visualização vira registro no histórico — puxa já, sem esperar o ciclo
+      void pull(true);
     } catch {
       toast('Não foi possível revelar', 'bad');
     } finally {

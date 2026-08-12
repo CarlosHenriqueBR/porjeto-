@@ -16,6 +16,7 @@
 import { updateDb, logActivity, notify } from './_lib/store.js';
 import { json, readBody, getUser, withErrors } from './_lib/http.js';
 import { createMcpClient, unwrapToolResult, findNumber, dig } from './_lib/mcp.js';
+import { cfg } from './_lib/config.js';
 
 const TZ = 'America/Sao_Paulo';
 
@@ -39,9 +40,9 @@ const ALIAS = {
 };
 
 async function authorize(req) {
-  const secret = process.env.CRON_SECRET;
+  const secret = cfg('CRON_SECRET');
   if (secret && req.headers.authorization === `Bearer ${secret}`) return { id: 'system', name: 'Cron' };
-  const ingest = process.env.INGEST_TOKEN;
+  const ingest = cfg('INGEST_TOKEN');
   if (ingest && req.headers['x-ingest-token'] === ingest) return { id: 'system', name: 'Integração' };
   if (req.headers['x-vercel-cron']) return { id: 'system', name: 'Cron' };
   return (await getUser(req)) || null;
@@ -53,7 +54,7 @@ async function handler(req, res) {
 
   const body = req.method === 'POST' ? await readBody(req) : {};
   const op = body.op || 'sync';
-  const mcpUrl = process.env.UTMIFY_MCP_URL;
+  const mcpUrl = cfg('UTMIFY_MCP_URL');
 
   /* ------------------------- descoberta de ferramentas ------------------- */
   if (op === 'discover') {
@@ -108,7 +109,7 @@ async function handler(req, res) {
       const client = createMcpClient(mcpUrl);
       await client.initialize();
 
-      let toolName = process.env.UTMIFY_MCP_TOOL;
+      let toolName = cfg('UTMIFY_MCP_TOOL');
       if (!toolName) {
         const { tools = [] } = (await client.listTools()) || {};
         const score = (t) => {
@@ -121,15 +122,15 @@ async function handler(req, res) {
       if (!toolName) return json(res, 502, { error: 'nenhuma_ferramenta', hint: 'Rode op=discover e defina UTMIFY_MCP_TOOL.' });
 
       let args = { startDate: date, endDate: date, date, start: date, end: date, timezone: TZ };
-      if (process.env.UTMIFY_MCP_ARGS) {
-        try { args = JSON.parse(process.env.UTMIFY_MCP_ARGS.replaceAll('{date}', date)); } catch { /* mantém padrão */ }
+      if (cfg('UTMIFY_MCP_ARGS')) {
+        try { args = JSON.parse(cfg('UTMIFY_MCP_ARGS').replaceAll('{date}', date)); } catch { /* mantém padrão */ }
       }
 
       const parsed = unwrapToolResult(await client.callTool(toolName, args));
       if (!parsed) return json(res, 502, { error: 'resposta_vazia', tool: toolName });
 
       const readField = (envKey, aliases) => {
-        const path = process.env[envKey];
+        const path = cfg(envKey);
         if (path) { const v = dig(parsed, path); if (v != null) return toNum(v); }
         const found = findNumber(parsed, aliases);
         return found == null ? null : found;
@@ -148,16 +149,16 @@ async function handler(req, res) {
     } catch (e) {
       return json(res, 502, { error: 'mcp_falhou', detail: String(e.message || e) });
     }
-  } else if (process.env.UTMIFY_METRICS_URL && process.env.UTMIFY_TOKEN) {
+  } else if (cfg('UTMIFY_METRICS_URL') && cfg('UTMIFY_TOKEN')) {
     via = 'rest';
     const date = String(body.targetDate || todayBR()).slice(0, 10);
-    const target = process.env.UTMIFY_METRICS_URL
+    const target = cfg('UTMIFY_METRICS_URL')
       .replaceAll('{date}', date).replaceAll('{start}', date).replaceAll('{end}', date);
     try {
       const r = await fetch(target, {
         headers: {
-          'x-api-token': process.env.UTMIFY_TOKEN,
-          Authorization: `Bearer ${process.env.UTMIFY_TOKEN}`,
+          'x-api-token': cfg('UTMIFY_TOKEN'),
+          Authorization: `Bearer ${cfg('UTMIFY_TOKEN')}`,
           Accept: 'application/json',
         },
         cache: 'no-store',
@@ -166,9 +167,9 @@ async function handler(req, res) {
       const payload = await r.json();
       rows = [{
         date,
-        revenue: toNum(dig(payload, process.env.UTMIFY_FIELD_REVENUE || '') ?? findNumber(payload, ALIAS.revenue)),
-        adSpend: toNum(dig(payload, process.env.UTMIFY_FIELD_ADSPEND || '') ?? findNumber(payload, ALIAS.adSpend)),
-        otherCost: toNum(dig(payload, process.env.UTMIFY_FIELD_OTHER || '') ?? findNumber(payload, ALIAS.otherCost)),
+        revenue: toNum(dig(payload, cfg('UTMIFY_FIELD_REVENUE') || '') ?? findNumber(payload, ALIAS.revenue)),
+        adSpend: toNum(dig(payload, cfg('UTMIFY_FIELD_ADSPEND') || '') ?? findNumber(payload, ALIAS.adSpend)),
+        otherCost: toNum(dig(payload, cfg('UTMIFY_FIELD_OTHER') || '') ?? findNumber(payload, ALIAS.otherCost)),
       }];
     } catch (e) {
       return json(res, 502, { error: 'utmify_inacessivel', detail: String(e.message || e) });

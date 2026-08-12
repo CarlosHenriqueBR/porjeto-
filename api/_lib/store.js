@@ -1,29 +1,43 @@
 // ---------------------------------------------------------------------------
-// Banco JSON com 4 drivers, escolhidos automaticamente pelas variáveis de
+// Banco JSON com 5 drivers, escolhidos automaticamente pelas variáveis de
 // ambiente presentes (nesta ordem de prioridade):
-//   1. Neon / Postgres (DATABASE_URL)         -> produção  [recomendado]
-//   2. KV REST (Vercel KV / Upstash Redis)    -> produção
-//   3. Vercel Blob                            -> produção
-//   4. Arquivo local ./data/db.json           -> desenvolvimento
+//   1. Supabase REST (SUPABASE_URL + SERVICE_ROLE_KEY) -> produção [recomendado]
+//   2. Neon / Postgres (DATABASE_URL)                  -> produção
+//   3. KV REST (Vercel KV / Upstash Redis)             -> produção
+//   4. Vercel Blob                                     -> produção
+//   5. Arquivo local ./data/db.json                    -> desenvolvimento
+//
+// O driver do Supabase usa só fetch — nenhuma dependência de npm, portanto
+// nenhum risco de "pacote não encontrado" em produção.
 // ---------------------------------------------------------------------------
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { hashPassword } from './crypto.js';
 import { SECTORS, ALL_PERMS } from './model.js';
+import { cfg } from './config.js';
 
-const PG_URL =
-  process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL || '';
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || '';
-const DB_KEY = process.env.DB_KEY || 'central-db';
+const SB_URL = cfg(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']).replace(/\/+$/, '');
+const SB_KEY = cfg(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_KEY']);
+const PG_URL = cfg(['DATABASE_URL', 'POSTGRES_URL', 'NEON_DATABASE_URL']);
+const KV_URL = cfg(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL']);
+const KV_TOKEN = cfg(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN']);
+const BLOB_TOKEN = cfg('BLOB_READ_WRITE_TOKEN');
+const DB_KEY = cfg('DB_KEY', 'central-db');
 const FILE_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 export const DRIVER =
-  PG_URL ? 'neon'
+  SB_URL && SB_KEY ? 'supabase'
+  : PG_URL ? 'neon'
   : KV_URL && KV_TOKEN ? 'kv'
   : BLOB_TOKEN ? 'blob'
   : 'file';
+
+export const TABLE_SQL = `create table if not exists public.central_db (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.central_db enable row level security;`;
 
 /**
  * Na Vercel o disco é somente-leitura: o driver de arquivo não tem como criar
@@ -42,6 +56,65 @@ export function dbConfigError() {
 }
 
 /* ------------------------------- drivers -------------------------------- */
+
+/* ----- Supabase (PostgREST) ------------------------------------------------
+ * Fala a API REST do Supabase com fetch puro — sem nenhuma dependência, que é
+ * o mesmo princípio do resto do projeto. O banco inteiro vive num único
+ * registro JSONB na tabela central_db.
+ *
+ * Usa a SERVICE ROLE KEY, que só existe no servidor (pasta api/) e nunca é
+ * enviada ao navegador. Ela ignora RLS de propósito: a autorização de quem vê
+ * o quê é feita pelo próprio sistema, em api/state.js e api/mutate.js.
+ * -------------------------------------------------------------------------- */
+const SB_TABLE = 'central_db';
+
+const sbHeaders = (extra = {}) => ({
+  apikey: SB_KEY,
+  Authorization: `Bearer ${SB_KEY}`,
+  ...extra,
+});
+
+function sbFail(status, body) {
+  // Tabela ainda não criada: erro clássico do primeiro deploy.
+  if (status === 404 || /PGRST205|does not exist|Could not find the table/i.test(body)) {
+    const e = new Error(
+      'A tabela central_db não existe no Supabase. Abra o SQL Editor do projeto e rode o script que está no README (seção Supabase).'
+    );
+    e.code = 'DB_CONFIG';
+    return e;
+  }
+  if (status === 401 || status === 403) {
+    const e = new Error(
+      'O Supabase recusou a chave. Confirme que SUPABASE_SERVICE_ROLE_KEY é a chave service_role (não a anon) e que SUPABASE_URL é a URL do projeto.'
+    );
+    e.code = 'DB_CONFIG';
+    return e;
+  }
+  return new Error(`Supabase ${status}: ${body.slice(0, 300)}`);
+}
+
+async function sbRead() {
+  const url = `${SB_URL}/rest/v1/${SB_TABLE}?id=eq.${encodeURIComponent(DB_KEY)}&select=data`;
+  const r = await fetch(url, { headers: sbHeaders({ Accept: 'application/json' }), cache: 'no-store' });
+  if (!r.ok) throw sbFail(r.status, await r.text());
+  const rows = await r.json();
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const value = rows[0].data;
+  return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
+async function sbWrite(db) {
+  const r = await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`, {
+    method: 'POST',
+    headers: sbHeaders({
+      'Content-Type': 'application/json',
+      // upsert pela chave primária (id) — sem on_conflict o PostgREST já usa a PK
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    }),
+    body: JSON.stringify({ id: DB_KEY, data: db, updated_at: new Date().toISOString() }),
+  });
+  if (!r.ok) throw sbFail(r.status, await r.text());
+}
 
 /* ----- Neon / Postgres -----------------------------------------------------
  * O banco inteiro vive num único registro JSONB. Mantém o modelo "um JSON"
@@ -159,7 +232,8 @@ async function fileWrite(db) {
 }
 
 const driver =
-  DRIVER === 'neon' ? { read: pgRead, write: pgWrite }
+  DRIVER === 'supabase' ? { read: sbRead, write: sbWrite }
+  : DRIVER === 'neon' ? { read: pgRead, write: pgWrite }
   : DRIVER === 'kv' ? { read: kvRead, write: kvWrite }
   : DRIVER === 'blob' ? { read: blobRead, write: blobWrite }
   : { read: fileRead, write: fileWrite };
@@ -193,7 +267,7 @@ export function emptyDb() {
 
 export async function seedDb() {
   const db = emptyDb();
-  const pass = process.env.SEED_PASSWORD || 'Operacao@2026';
+  const pass = cfg('SEED_PASSWORD', 'Operacao@2026');
   for (const a of ADMIN_SEED) {
     db.users.push({
       id: cid('u'), name: a.name, email: a.email,
@@ -211,7 +285,7 @@ export async function seedDb() {
 }
 
 let cache = { db: null, at: 0 };
-const READ_TTL = Number(process.env.READ_TTL_MS ?? 1200);
+const READ_TTL = Number(cfg('READ_TTL_MS', '1200'));
 
 export async function readDb({ fresh = false } = {}) {
   if (!DB_CONFIGURED) throw dbConfigError();
